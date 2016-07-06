@@ -349,6 +349,73 @@ RCT_EXPORT_METHOD(getTwitterCredentials:(NSString *)userName
     });
 }
 
+RCT_EXPORT_METHOD(postTweet:(NSString *)text withUsername:(NSString *)username callback:(RCTResponseSenderBlock)callback) {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+
+        ACAccountStore *accountStore = [[ACAccountStore alloc] init];
+        
+
+        ACAccountType *accountType = [accountStore accountTypeWithAccountTypeIdentifier:
+                                      ACAccountTypeIdentifierTwitter];
+        NSArray *accounts = [accountStore accountsWithAccountType:accountType];
+        
+        ACAccount *twitterAccount;
+        
+        for (int i = 0; i < [accounts count]; i++) {
+            ACAccount *account = [accounts objectAtIndex:i];
+            
+            if ([account.username isEqualToString:username]) {
+                twitterAccount = account;
+            }
+        }
+        
+        if (twitterAccount == nil) {
+            callback(@[@{
+                           @"code": @-4,
+                           @"message": @"Unable to find twitter account for username",
+                           }, [NSNull null]]);
+            return;
+        }
+
+        
+        NSDictionary *message = @{@"status": text};
+        
+        NSURL *requestURL = [NSURL
+                             URLWithString:@"https://api.twitter.com/1/statuses/update.json"];
+        
+        SLRequest *request = [SLRequest
+                                  requestForServiceType:SLServiceTypeTwitter
+                                  requestMethod:SLRequestMethodPOST
+                                  URL:requestURL parameters:message];
+        request.account = twitterAccount;
+        [request performRequestWithHandler:^(NSData *responseData, NSHTTPURLResponse *urlResponse, NSError *error) {
+            
+            if (error || [urlResponse statusCode] != 200 ) {
+                if (error) {
+                    callback(@[@{
+                                   @"code": @(error.code),
+                                   @"message": error.localizedDescription
+                                   }, [NSNull null]]);
+                } else {
+                    callback(@[@{
+                                   @"code": @-3,
+                                   @"message": [NSString stringWithFormat:@"SLRequest failed with status %ld", (long)[urlResponse statusCode]]
+                                   }, [NSNull null]]);
+                }
+            }
+            else {
+                NSString *responseStr = [[NSString alloc] initWithData:responseData encoding:NSUTF8StringEncoding];
+                
+                NSDictionary *paramsInResponse = [[self class] parseQueryString:responseStr];
+                
+                callback(@[[NSNull null], paramsInResponse]);
+            }
+
+        }];
+        
+    });
+}
+
 + (NSDictionary *)parseQueryString:(NSString *)string
 {
     NSMutableDictionary *queryStringDictionary = [[NSMutableDictionary alloc] init];
